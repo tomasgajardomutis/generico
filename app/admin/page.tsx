@@ -1,15 +1,193 @@
 "use client";
-import {useEffect,useState} from "react";import {useRouter} from "next/navigation";import {FileText,HelpCircle,LogOut,Newspaper,Package,Plus,Trash2} from "lucide-react";import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";import {demoFaqs,demoNews,demoPosts,demoServices} from "@/lib/content";
-const modules=[{id:"services",label:"Servicios",icon:Package},{id:"posts",label:"Blog",icon:FileText},{id:"news",label:"Noticias",icon:Newspaper},{id:"faqs",label:"FAQ",icon:HelpCircle}] as const;type ModuleId=typeof modules[number]["id"];const fallback={services:demoServices,posts:demoPosts,news:demoNews,faqs:demoFaqs};
-// Dashboard CRUD reutilizable. RLS vuelve a validar cada escritura en la base.
+
+import {FormEvent,useEffect,useMemo,useState} from "react";
+import {useRouter} from "next/navigation";
+import {FileText,HelpCircle,LogOut,Newspaper,Package,Pencil,Plus,Save,Trash2,X} from "lucide-react";
+import {demoFaqs,demoNews,demoPosts,demoServices} from "@/lib/content";
+import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";
+
+const modules=[
+  {id:"services",label:"Servicios",icon:Package},
+  {id:"posts",label:"Blog",icon:FileText},
+  {id:"news",label:"Noticias",icon:Newspaper},
+  {id:"faqs",label:"FAQ",icon:HelpCircle},
+] as const;
+
+type ModuleId=typeof modules[number]["id"];
+type CmsRow=Record<string,unknown>;
+type EditorState={mode:"create"|"edit";values:CmsRow}|null;
+
+const fallback:Record<ModuleId,CmsRow[]>={
+  services:demoServices as unknown as CmsRow[],
+  posts:demoPosts as unknown as CmsRow[],
+  news:demoNews as unknown as CmsRow[],
+  faqs:demoFaqs as unknown as CmsRow[],
+};
+
+// Lista blanca de columnas editables. Los campos internos (id y timestamps)
+// nunca se muestran ni se envían de vuelta a la API.
+const editableFields:Record<ModuleId,{name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"}[]>={
+  services:[
+    {name:"title",label:"Título"},{name:"slug",label:"URL (slug)"},
+    {name:"summary",label:"Resumen",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
+    {name:"category",label:"Categoría"},{name:"image_url",label:"URL de imagen"},
+    {name:"sort_order",label:"Orden",type:"number"},
+  ],
+  posts:[
+    {name:"title",label:"Título"},{name:"slug",label:"URL (slug)"},
+    {name:"summary",label:"Resumen",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
+    {name:"category",label:"Categoría"},{name:"author_name",label:"Autor"},
+    {name:"image_url",label:"URL de imagen"},{name:"seo_title",label:"Título SEO"},
+    {name:"seo_description",label:"Descripción SEO",type:"textarea"},
+    {name:"published_at",label:"Fecha de publicación",type:"datetime-local"},
+  ],
+  news:[
+    {name:"title",label:"Título"},{name:"slug",label:"URL (slug)"},
+    {name:"summary",label:"Resumen",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
+    {name:"category",label:"Categoría"},{name:"image_url",label:"URL de imagen"},
+    {name:"published_at",label:"Fecha de publicación",type:"datetime-local"},
+  ],
+  faqs:[
+    {name:"question",label:"Pregunta"},{name:"answer",label:"Respuesta",type:"textarea"},
+    {name:"sort_order",label:"Orden",type:"number"},
+  ],
+};
+
+function emptyItem(module:ModuleId,rowCount:number):CmsRow{
+  if(module==="faqs")return{question:"",answer:"",sort_order:rowCount+1,is_published:false};
+  return{title:"",slug:"",summary:"",body:"",category:"",image_url:"",is_published:false,
+    ...(module==="services"?{sort_order:rowCount+1}:{}),
+    ...(module==="posts"?{author_name:"",seo_title:"",seo_description:"",published_at:""}:{}),
+    ...(module==="news"?{published_at:""}:{}),
+  };
+}
+
+function localDateTime(value:unknown){
+  if(!value||typeof value!=="string")return"";
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime()))return"";
+  const offset=date.getTimezoneOffset()*60_000;
+  return new Date(date.getTime()-offset).toISOString().slice(0,16);
+}
+
+// El dashboard usa la sesión del navegador. Supabase vuelve a aplicar RLS en
+// cada lectura y escritura, incluso si alguien manipula el código del cliente.
 export default function AdminPage(){
- const router=useRouter(),client=getSupabaseClient();const[ready,setReady]=useState(!client);const[active,setActive]=useState<ModuleId>("services");const[rows,setRows]=useState<Record<string,unknown>[]>(fallback.services as unknown as Record<string,unknown>[]);const[message,setMessage]=useState("");
- useEffect(()=>{client?.auth.getSession().then(({data})=>{if(!data.session)router.replace("/admin/login");else setReady(true)})},[client,router]);
- useEffect(()=>{if(!ready||!client)return;client.from(active).select("*").order(active==="faqs"?"sort_order":"created_at",{ascending:false}).then(({data,error})=>{setRows(data??[]);if(error)setMessage(error.message)})},[active,ready,client]);
- function changeModule(id:ModuleId){setActive(id);setMessage("");if(!client)setRows(fallback[id] as unknown as Record<string,unknown>[])}
- async function createItem(){if(!client){setMessage("Conecta Supabase para crear contenido real.");return}const payload=active==="faqs"?{question:"Nueva pregunta",answer:"Escribe una respuesta",sort_order:rows.length+1}:{title:"Nuevo contenido",slug:`nuevo-${Date.now()}`,summary:"Edita este resumen",body:"",is_published:false};const{data,error}=await client.from(active).insert(payload).select().single();if(error)setMessage(error.message);else setRows([data,...rows])}
- async function remove(id:unknown){if(!client||typeof id!=="string"){setMessage("Acción disponible al conectar Supabase.");return}if(!confirm("¿Eliminar este contenido?"))return;const{error}=await client.from(active).delete().eq("id",id);if(error)setMessage(error.message);else setRows(rows.filter(r=>r.id!==id))}
- async function logout(){await client?.auth.signOut();router.replace("/admin/login")}
- if(!ready)return <main className="admin-shell"><section className="admin-card">Validando sesión…</section></main>;
- return <main className="admin-layout"><aside className="admin-sidebar"><p className="eyebrow">CMS Nexo</p><h2>Contenido</h2><nav className="admin-nav">{modules.map(m=><button className={`chip ${active===m.id?"active":""}`} key={m.id} onClick={()=>changeModule(m.id)}><m.icon size={15}/> {m.label}</button>)}</nav><button className="button button-secondary" style={{marginTop:"1rem"}} onClick={logout}><LogOut size={16}/> Salir</button></aside><section className="admin-main"><div className="stat-grid">{modules.map(m=><div className="stat-card" key={m.id}><span>{m.label}</span><strong>{active===m.id?rows.length:"—"}</strong></div>)}</div><div className="section"><div className="admin-toolbar"><div><p className="eyebrow">Editor</p><h1>{modules.find(m=>m.id===active)?.label}</h1></div><button className="button button-primary" onClick={createItem}><Plus size={17}/> Crear</button></div>{!isSupabaseConfigured()&&<p className="notice">Vista de demostración. Configura Supabase para habilitar operaciones persistentes.</p>}{message&&<p className="notice" role="status">{message}</p>}<div style={{overflowX:"auto"}}><table className="admin-table"><thead><tr><th>Título / pregunta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{rows.map(row=><tr key={String(row.id)}><td>{String(row.title??row.question??"Sin título")}</td><td>{row.is_published===false?"Borrador":"Publicado"}</td><td><button className="icon-button" onClick={()=>remove(row.id)} aria-label="Eliminar"><Trash2 size={16}/></button></td></tr>)}</tbody></table></div></div></section></main>
+  const router=useRouter();
+  const client=useMemo(()=>getSupabaseClient(),[]);
+  const[ready,setReady]=useState(!client);
+  const[active,setActive]=useState<ModuleId>("services");
+  const[rows,setRows]=useState<CmsRow[]>(fallback.services);
+  const[editor,setEditor]=useState<EditorState>(null);
+  const[message,setMessage]=useState("");
+  const[loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    client?.auth.getSession().then(({data})=>{
+      if(!data.session)router.replace("/admin/login");
+      else setReady(true);
+    });
+  },[client,router]);
+
+  useEffect(()=>{
+    if(!ready||!client)return;
+    const ordered=active==="faqs"||active==="services";
+    client.from(active).select("*").order(ordered?"sort_order":"created_at",{ascending:ordered})
+      .then(({data,error})=>{
+        setLoading(false);
+        if(error){setMessage(`No fue posible cargar el contenido: ${error.message}`);return}
+        setRows(data??[]);
+      });
+  },[active,ready,client]);
+
+  function changeModule(id:ModuleId){
+    setActive(id);setEditor(null);setMessage("");setLoading(Boolean(client));
+    if(!client)setRows(fallback[id]);
+  }
+
+  function openCreate(){setEditor({mode:"create",values:emptyItem(active,rows.length)});setMessage("")}
+  function openEdit(row:CmsRow){
+    const values={...row};
+    if("published_at" in values)values.published_at=localDateTime(values.published_at);
+    setEditor({mode:"edit",values});setMessage("");
+  }
+
+  function setField(name:string,value:unknown){
+    setEditor(current=>current?{...current,values:{...current.values,[name]:value}}:current);
+  }
+
+  async function save(event:FormEvent){
+    event.preventDefault();
+    if(!client||!editor){setMessage("No fue posible conectar con Supabase.");return}
+    setLoading(true);setMessage("");
+
+    // Se construye una lista blanca para impedir cambios en columnas internas.
+    const payload=Object.fromEntries(editableFields[active].map(field=>{
+      let value=editor.values[field.name]??"";
+      if(field.type==="number")value=Number(value)||0;
+      if(field.type==="datetime-local")value=value?new Date(String(value)).toISOString():null;
+      return[field.name,value];
+    }));
+    const writable={...payload,is_published:Boolean(editor.values.is_published)};
+    const query=editor.mode==="create"
+      ?client.from(active).insert(writable)
+      :client.from(active).update(writable).eq("id",String(editor.values.id));
+    const{data,error}=await query.select("*").single();
+    setLoading(false);
+    if(error){setMessage(`No fue posible guardar: ${error.message}`);return}
+
+    setRows(current=>editor.mode==="create"?[data,...current]:current.map(row=>row.id===data.id?data:row));
+    setEditor(null);setMessage("Cambios guardados correctamente.");
+  }
+
+  async function remove(id:unknown){
+    if(!client||typeof id!=="string"){setMessage("Acción disponible al conectar Supabase.");return}
+    if(!confirm("¿Eliminar este contenido? Esta acción no se puede deshacer."))return;
+    setLoading(true);setMessage("");
+    const{error}=await client.from(active).delete().eq("id",id);
+    setLoading(false);
+    if(error)setMessage(`No fue posible eliminar: ${error.message}`);
+    else{setRows(current=>current.filter(row=>row.id!==id));setMessage("Contenido eliminado.")}
+  }
+
+  async function logout(){await client?.auth.signOut();router.replace("/admin/login")}
+
+  if(!ready)return <main className="admin-shell"><section className="admin-card">Validando sesión…</section></main>;
+
+  return <main className="admin-layout">
+    <aside className="admin-sidebar">
+      <p className="eyebrow">CMS Nexo</p><h2>Contenido</h2>
+      <nav className="admin-nav">{modules.map(module=><button className={`chip ${active===module.id?"active":""}`} key={module.id} onClick={()=>changeModule(module.id)}><module.icon size={15}/> {module.label}</button>)}</nav>
+      <button className="button button-secondary" style={{marginTop:"1rem"}} onClick={logout}><LogOut size={16}/> Salir</button>
+    </aside>
+    <section className="admin-main">
+      <div className="stat-grid">{modules.map(module=><div className="stat-card" key={module.id}><span>{module.label}</span><strong>{active===module.id?rows.length:"—"}</strong></div>)}</div>
+      <div className="section">
+        <div className="admin-toolbar"><div><p className="eyebrow">Editor</p><h1>{modules.find(module=>module.id===active)?.label}</h1></div><button className="button button-primary" onClick={openCreate}><Plus size={17}/> Crear</button></div>
+        {!isSupabaseConfigured()&&<p className="notice">Vista de demostración. Configura Supabase para habilitar operaciones persistentes.</p>}
+        {message&&<p className="notice" role="status">{message}</p>}
+        <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Título / pregunta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {rows.map(row=><tr key={String(row.id)}><td>{String(row.title??row.question??"Sin título")}</td><td>{row.is_published===false?"Borrador":"Publicado"}</td><td><div className="admin-actions"><button className="icon-button" onClick={()=>openEdit(row)} aria-label="Editar"><Pencil size={16}/></button><button className="icon-button" onClick={()=>remove(row.id)} aria-label="Eliminar"><Trash2 size={16}/></button></div></td></tr>)}
+          {!loading&&rows.length===0&&<tr><td colSpan={3}>Aún no hay contenido en este módulo.</td></tr>}
+        </tbody></table></div>
+        {loading&&!editor&&<p className="article-meta">Cargando contenido…</p>}
+      </div>
+    </section>
+
+    {editor&&<div className="editor-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEditor(null)}}>
+      <section className="editor-panel" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+        <div className="editor-heading"><div><p className="eyebrow">{editor.mode==="create"?"Nuevo contenido":"Editar contenido"}</p><h2 id="editor-title">{modules.find(module=>module.id===active)?.label}</h2></div><button className="icon-button" onClick={()=>setEditor(null)} aria-label="Cerrar editor"><X size={18}/></button></div>
+        <form className="editor-form" onSubmit={save}>
+          {editableFields[active].map(field=><div className={`form-field ${field.type==="textarea"?"editor-field-wide":""}`} key={field.name}>
+            <label htmlFor={`field-${field.name}`}>{field.label}</label>
+            {field.type==="textarea"
+              ?<textarea className="input editor-textarea" id={`field-${field.name}`} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={field.name==="summary"||field.name==="body"||field.name==="answer"}/>
+              :<input className="input" id={`field-${field.name}`} type={field.type??"text"} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={["title","slug","question"].includes(field.name)}/>}
+          </div>)}
+          <label className="publish-toggle"><input type="checkbox" checked={Boolean(editor.values.is_published)} onChange={event=>setField("is_published",event.target.checked)}/><span>Publicar contenido</span></label>
+          <div className="editor-footer"><button type="button" className="button button-secondary" onClick={()=>setEditor(null)}>Cancelar</button><button className="button button-primary" disabled={loading}><Save size={17}/>{loading?"Guardando…":"Guardar cambios"}</button></div>
+        </form>
+      </section>
+    </div>}
+  </main>;
 }
