@@ -1,4 +1,5 @@
 import type {ContentItem,FaqItem} from "./types";
+import {getSupabasePublicClient} from "./supabase/public";
 
 // Datos semilla: mantienen la UI navegable antes de enlazar Supabase.
 export const demoServices:ContentItem[]=[
@@ -15,8 +16,36 @@ export const demoPosts:ContentItem[]=[
 export const demoNews:ContentItem[]=[{id:"1",slug:"nueva-plataforma",title:"Lanzamos una nueva base para productos digitales",summary:"Una arquitectura abierta, segura y preparada para crecer desde el primer día.",category:"Producto",published_at:"2026-09-15"},{id:"2",slug:"cobertura-regional",title:"Mejor rendimiento para usuarios en Latinoamérica",summary:"Optimización de entrega y caché distribuida en la red global.",category:"Tecnología",published_at:"2026-09-01"}];
 export const demoFaqs:FaqItem[]=[{id:"1",question:"¿Puedo conectar mi propio proyecto Supabase?",answer:"Sí. Solo debes configurar la URL y publishable key en las variables del entorno y ejecutar la migración SQL incluida.",sort_order:1},{id:"2",question:"¿El panel de administración es público?",answer:"La ruta de acceso no aparece en la navegación y cada operación está protegida por autenticación y políticas RLS.",sort_order:2},{id:"3",question:"¿Puedo usar mi propio dominio?",answer:"Sí. Cloudflare Pages permite enlazar un dominio personalizado y gestionar SSL automáticamente.",sort_order:3}];
 
-// La capa de acceso queda centralizada para reemplazar el fallback por consultas server-side.
-export async function getServices(limit?:number){return limit?demoServices.slice(0,limit):demoServices}
-export async function getPosts(){return demoPosts}
-export async function getNews(){return demoNews}
-export async function getFaqs(){return demoFaqs}
+// Cada consulta pública respeta RLS y vuelve a los datos locales solo ante un
+// error de red o configuración. Una tabla vacía se respeta como decisión del CMS.
+export async function getServices(limit?:number){
+ const query=getSupabasePublicClient().from("services").select("id,slug,title,summary,body,category,is_published").eq("is_published",true).order("sort_order",{ascending:true});
+ if(limit)query.limit(limit);
+ const{data,error}=await query;
+ if(error)return limit?demoServices.slice(0,limit):demoServices;
+ return data as ContentItem[];
+}
+
+export async function getPosts(){
+ const{data,error}=await getSupabasePublicClient().from("posts").select("id,slug,title,summary,body,category,author_name,seo_title,seo_description,published_at,is_published").eq("is_published",true).lte("published_at",new Date().toISOString()).order("published_at",{ascending:false});
+ if(error)return demoPosts;
+ return data as ContentItem[];
+}
+
+export async function getPostBySlug(slug:string){
+ const{data,error}=await getSupabasePublicClient().from("posts").select("id,slug,title,summary,body,category,author_name,seo_title,seo_description,published_at,is_published").eq("slug",slug).eq("is_published",true).lte("published_at",new Date().toISOString()).maybeSingle();
+ if(error)return demoPosts.find(post=>post.slug===slug)??null;
+ return data as ContentItem|null;
+}
+
+export async function getNews(){
+ const{data,error}=await getSupabasePublicClient().from("news").select("id,slug,title,summary,body,category,published_at,is_published").eq("is_published",true).lte("published_at",new Date().toISOString()).order("published_at",{ascending:false});
+ if(error)return demoNews;
+ return data as ContentItem[];
+}
+
+export async function getFaqs(){
+ const{data,error}=await getSupabasePublicClient().from("faqs").select("id,question,answer,sort_order,is_published").eq("is_published",true).order("sort_order",{ascending:true});
+ if(error)return demoFaqs;
+ return data as FaqItem[];
+}
