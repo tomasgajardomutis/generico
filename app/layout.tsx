@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Header } from "@/components/site/header";
 import { Footer } from "@/components/site/footer";
+import { getSiteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://fullstack-cloudflare-supabase-starter.sites.openai.com"),
+  metadataBase: new URL(getSiteUrl()),
   title: { default: "Nexo | Plataforma digital moderna", template: "%s | Nexo" },
   description: "Base full-stack moderna con CMS, seguridad y despliegue global en Cloudflare.",
   alternates: { canonical: "/", languages: { "es-CL": "/", es: "/" } },
