@@ -30,10 +30,13 @@ const fallback:Record<ModuleId,CmsRow[]>={
 
 // Lista blanca de columnas editables. Los campos internos (id y timestamps)
 // nunca se muestran ni se envían de vuelta a la API.
-type EditorField={name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"|"page-type"};
+type EditorField={name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"|"page-type"|"checkbox"};
 const editableFields:Record<ModuleId,EditorField[]>={
   pages:[
     {name:"page_type",label:"Tipo de página",type:"page-type"},
+    {name:"show_in_menu",label:"Mostrar en el menú principal",type:"checkbox"},
+    {name:"menu_label",label:"Nombre en el menú"},
+    {name:"menu_order",label:"Orden en el menú",type:"number"},
     {name:"title",label:"Título principal"},{name:"slug",label:"Identificador de página"},
     {name:"summary",label:"Introducción",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
     {name:"seo_title",label:"Título SEO"},{name:"seo_description",label:"Descripción SEO",type:"textarea"},
@@ -67,7 +70,7 @@ const editableFields:Record<ModuleId,EditorField[]>={
 
 function emptyItem(module:ModuleId,rowCount:number):CmsRow{
   if(module==="faqs")return{question:"",answer:"",sort_order:rowCount+1,is_published:false};
-  if(module==="pages")return{page_type:"basic",content_data:{},title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
+  if(module==="pages")return{page_type:"basic",content_data:{},show_in_menu:false,menu_label:"",menu_order:100,title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
   return{title:"",slug:"",summary:"",body:"",category:"",image_url:"",is_published:false,
     ...(module==="services"?{sort_order:rowCount+1}:{}),
     ...(module==="posts"?{author_name:"",seo_title:"",seo_description:"",published_at:""}:{}),
@@ -241,6 +244,8 @@ export default function AdminPage(){
             <label htmlFor={`field-${field.name}`}>{field.label}</label>
             {field.type==="page-type"
               ?<><select className="input" id={`field-${field.name}`} value={String(editor.values[field.name]??"basic")} onChange={event=>setField(field.name,event.target.value)} required>{PAGE_TYPE_GROUPS.map(group=><optgroup label={group.label} key={group.label}>{group.options.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</optgroup>)}</select><small className="field-help">{PAGE_TYPE_DESCRIPTIONS[isPageType(editor.values.page_type)?editor.values.page_type:"basic"]}</small></>
+              :field.type==="checkbox"
+              ?<label className="publish-toggle"><input id={`field-${field.name}`} type="checkbox" checked={Boolean(editor.values[field.name])} onChange={event=>setField(field.name,event.target.checked)}/><span>Incluir esta página publicada en la navegación de escritorio y móvil</span></label>
               :field.type==="textarea"
               ?<textarea className="input editor-textarea" id={`field-${field.name}`} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={field.name==="summary"||field.name==="body"||field.name==="answer"}/>
               :<input className="input" id={`field-${field.name}`} type={field.type??"text"} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={["title","slug","question"].includes(field.name)}/>}

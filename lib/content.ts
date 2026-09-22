@@ -72,9 +72,17 @@ export async function getPage(slug:string){
 // Devuelve las páginas públicas para generar rutas y sitemap. Ante un error de
 // conexión se conservan únicamente las páginas de demostración conocidas.
 export async function getPublishedPages(){
- const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,content_data,is_published,updated_at").eq("is_published",true).order("updated_at",{ascending:false});
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,content_data,show_in_menu,menu_label,menu_order,is_published,updated_at").eq("is_published",true).order("updated_at",{ascending:false});
  if(error)return Object.values(demoPages);
  return data as PageItem[];
+}
+
+// El menú sólo consume páginas publicadas marcadas explícitamente por el CMS.
+// RLS mantiene fuera de esta consulta cualquier borrador.
+export async function getNavigationPages(){
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,menu_label,menu_order,is_published").eq("is_published",true).eq("show_in_menu",true).order("menu_order",{ascending:true}).order("title",{ascending:true});
+ if(error)return[];
+ return data as Pick<PageItem,"id"|"slug"|"title"|"menu_label"|"menu_order"|"is_published">[];
 }
 
 export async function getPageByType(pageType:string){
