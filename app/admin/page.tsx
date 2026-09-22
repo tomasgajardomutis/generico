@@ -4,6 +4,7 @@ import {FormEvent,useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
 import {Eye,EyeOff,FileText,HelpCircle,LayoutTemplate,LogOut,Newspaper,Package,Pencil,Plus,Save,Search,Trash2,X} from "lucide-react";
 import {demoFaqs,demoNews,demoPages,demoPosts,demoServices} from "@/lib/content";
+import {PageContentFields} from "@/components/admin/page-content-fields";
 import {PAGE_TYPE_DESCRIPTIONS,PAGE_TYPE_GROUPS,PAGE_TYPE_LABELS,isPageType} from "@/lib/page-types";
 import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";
 
@@ -66,7 +67,7 @@ const editableFields:Record<ModuleId,EditorField[]>={
 
 function emptyItem(module:ModuleId,rowCount:number):CmsRow{
   if(module==="faqs")return{question:"",answer:"",sort_order:rowCount+1,is_published:false};
-  if(module==="pages")return{page_type:"basic",title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
+  if(module==="pages")return{page_type:"basic",content_data:{},title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
   return{title:"",slug:"",summary:"",body:"",category:"",image_url:"",is_published:false,
     ...(module==="services"?{sort_order:rowCount+1}:{}),
     ...(module==="posts"?{author_name:"",seo_title:"",seo_description:"",published_at:""}:{}),
@@ -152,6 +153,9 @@ export default function AdminPage(){
       if(field.type==="datetime-local")value=value?new Date(String(value)).toISOString():null;
       return[field.name,value];
     }));
+    // content_data es JSONB y contiene únicamente los campos específicos de
+    // la plantilla. Se conserva separado de los metadatos comunes de página.
+    if(active==="pages")payload.content_data=editor.values.content_data??{};
     // Los textos obligatorios se normalizan antes de escribir. Esto evita FAQ
     // vacías o preguntas compuestas solo por espacios.
     for(const field of editableFields[active]){
@@ -241,6 +245,7 @@ export default function AdminPage(){
               ?<textarea className="input editor-textarea" id={`field-${field.name}`} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={field.name==="summary"||field.name==="body"||field.name==="answer"}/>
               :<input className="input" id={`field-${field.name}`} type={field.type??"text"} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={["title","slug","question"].includes(field.name)}/>}
           </div>)}
+          {active==="pages"&&<PageContentFields pageType={isPageType(editor.values.page_type)?editor.values.page_type:"basic"} value={editor.values.content_data} onChange={value=>setField("content_data",value)}/>}
           <label className="publish-toggle"><input type="checkbox" checked={Boolean(editor.values.is_published)} onChange={event=>setField("is_published",event.target.checked)}/><span>Publicar contenido</span></label>
           <div className="editor-footer"><button type="button" className="button button-secondary" onClick={()=>setEditor(null)}>Cancelar</button><button className="button button-primary" disabled={loading}><Save size={17}/>{loading?"Guardando…":"Guardar cambios"}</button></div>
         </form>

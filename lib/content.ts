@@ -64,7 +64,7 @@ export async function getFaqs(){
 }
 
 export async function getPage(slug:string){
- const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,is_published,updated_at").eq("slug",slug).eq("is_published",true).maybeSingle();
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,content_data,is_published,updated_at").eq("slug",slug).eq("is_published",true).maybeSingle();
  if(error||!data)return demoPages[slug]??null;
  return data as PageItem;
 }
@@ -72,13 +72,13 @@ export async function getPage(slug:string){
 // Devuelve las páginas públicas para generar rutas y sitemap. Ante un error de
 // conexión se conservan únicamente las páginas de demostración conocidas.
 export async function getPublishedPages(){
- const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,is_published,updated_at").eq("is_published",true).order("updated_at",{ascending:false});
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,content_data,is_published,updated_at").eq("is_published",true).order("updated_at",{ascending:false});
  if(error)return Object.values(demoPages);
  return data as PageItem[];
 }
 
 export async function getPageByType(pageType:string){
- const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,is_published,updated_at").eq("page_type",pageType).eq("is_published",true).order("updated_at",{ascending:false}).limit(1).maybeSingle();
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,page_type,content_data,is_published,updated_at").eq("page_type",pageType).eq("is_published",true).order("updated_at",{ascending:false}).limit(1).maybeSingle();
  if(error)return null;
  return data as PageItem|null;
 }
