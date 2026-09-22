@@ -4,6 +4,7 @@ import {FormEvent,useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
 import {Eye,EyeOff,FileText,HelpCircle,LayoutTemplate,LogOut,Newspaper,Package,Pencil,Plus,Save,Search,Trash2,X} from "lucide-react";
 import {demoFaqs,demoNews,demoPages,demoPosts,demoServices} from "@/lib/content";
+import {PAGE_TYPE_DESCRIPTIONS,PAGE_TYPE_GROUPS,PAGE_TYPE_LABELS,isPageType} from "@/lib/page-types";
 import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";
 
 const modules=[
@@ -28,8 +29,10 @@ const fallback:Record<ModuleId,CmsRow[]>={
 
 // Lista blanca de columnas editables. Los campos internos (id y timestamps)
 // nunca se muestran ni se envían de vuelta a la API.
-const editableFields:Record<ModuleId,{name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"}[]>={
+type EditorField={name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"|"page-type"};
+const editableFields:Record<ModuleId,EditorField[]>={
   pages:[
+    {name:"page_type",label:"Tipo de página",type:"page-type"},
     {name:"title",label:"Título principal"},{name:"slug",label:"Identificador de página"},
     {name:"summary",label:"Introducción",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
     {name:"seo_title",label:"Título SEO"},{name:"seo_description",label:"Descripción SEO",type:"textarea"},
@@ -63,7 +66,7 @@ const editableFields:Record<ModuleId,{name:string;label:string;type?:"text"|"tex
 
 function emptyItem(module:ModuleId,rowCount:number):CmsRow{
   if(module==="faqs")return{question:"",answer:"",sort_order:rowCount+1,is_published:false};
-  if(module==="pages")return{title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
+  if(module==="pages")return{page_type:"basic",title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
   return{title:"",slug:"",summary:"",body:"",category:"",image_url:"",is_published:false,
     ...(module==="services"?{sort_order:rowCount+1}:{}),
     ...(module==="posts"?{author_name:"",seo_title:"",seo_description:"",published_at:""}:{}),
@@ -218,9 +221,9 @@ export default function AdminPage(){
           <label className="admin-status"><span>Estado</span><select value={status} onChange={event=>setStatus(event.target.value as typeof status)}><option value="all">Todos</option><option value="published">Publicados</option><option value="draft">Borradores</option></select></label>
           <span className="admin-result-count">{visibleRows.length} de {rows.length}</span>
         </div>
-        <div className="admin-table-wrap"><table className="admin-table"><thead><tr>{active==="faqs"&&<th>Orden</th>}<th>Título / pregunta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-          {visibleRows.map(row=><tr key={String(row.id)}>{active==="faqs"&&<td>{String(row.sort_order??"—")}</td>}<td>{String(row.title??row.question??"Sin título")}</td><td><span className={`status-badge ${row.is_published===false?"draft":"published"}`}>{row.is_published===false?"Borrador":"Publicado"}</span></td><td><div className="admin-actions"><button className="icon-button" onClick={()=>togglePublished(row)} aria-label={row.is_published===false?"Publicar":"Pasar a borrador"} title={row.is_published===false?"Publicar":"Pasar a borrador"}>{row.is_published===false?<Eye size={16}/>:<EyeOff size={16}/>}</button><button className="icon-button" onClick={()=>openEdit(row)} aria-label="Editar" title="Editar"><Pencil size={16}/></button><button className="icon-button danger" onClick={()=>remove(row.id)} aria-label="Eliminar" title="Eliminar"><Trash2 size={16}/></button></div></td></tr>)}
-          {!loading&&visibleRows.length===0&&<tr><td colSpan={active==="faqs"?4:3}>{rows.length===0?"Aún no hay contenido en este módulo.":"No hay resultados para estos filtros."}</td></tr>}
+        <div className="admin-table-wrap"><table className="admin-table"><thead><tr>{active==="faqs"&&<th>Orden</th>}<th>Título / pregunta</th>{active==="pages"&&<th>Tipo</th>}<th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {visibleRows.map(row=><tr key={String(row.id)}>{active==="faqs"&&<td>{String(row.sort_order??"—")}</td>}<td>{String(row.title??row.question??"Sin título")}</td>{active==="pages"&&<td>{PAGE_TYPE_LABELS[isPageType(row.page_type)?row.page_type:"basic"]}</td>}<td><span className={`status-badge ${row.is_published===false?"draft":"published"}`}>{row.is_published===false?"Borrador":"Publicado"}</span></td><td><div className="admin-actions"><button className="icon-button" onClick={()=>togglePublished(row)} aria-label={row.is_published===false?"Publicar":"Pasar a borrador"} title={row.is_published===false?"Publicar":"Pasar a borrador"}>{row.is_published===false?<Eye size={16}/>:<EyeOff size={16}/>}</button><button className="icon-button" onClick={()=>openEdit(row)} aria-label="Editar" title="Editar"><Pencil size={16}/></button><button className="icon-button danger" onClick={()=>remove(row.id)} aria-label="Eliminar" title="Eliminar"><Trash2 size={16}/></button></div></td></tr>)}
+          {!loading&&visibleRows.length===0&&<tr><td colSpan={active==="faqs"||active==="pages"?4:3}>{rows.length===0?"Aún no hay contenido en este módulo.":"No hay resultados para estos filtros."}</td></tr>}
         </tbody></table></div>
         {loading&&!editor&&<p className="article-meta">Cargando contenido…</p>}
       </div>
@@ -232,7 +235,9 @@ export default function AdminPage(){
         <form className="editor-form" onSubmit={save}>
           {editableFields[active].map(field=><div className={`form-field ${field.type==="textarea"?"editor-field-wide":""}`} key={field.name}>
             <label htmlFor={`field-${field.name}`}>{field.label}</label>
-            {field.type==="textarea"
+            {field.type==="page-type"
+              ?<><select className="input" id={`field-${field.name}`} value={String(editor.values[field.name]??"basic")} onChange={event=>setField(field.name,event.target.value)} required>{PAGE_TYPE_GROUPS.map(group=><optgroup label={group.label} key={group.label}>{group.options.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</optgroup>)}</select><small className="field-help">{PAGE_TYPE_DESCRIPTIONS[isPageType(editor.values.page_type)?editor.values.page_type:"basic"]}</small></>
+              :field.type==="textarea"
               ?<textarea className="input editor-textarea" id={`field-${field.name}`} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={field.name==="summary"||field.name==="body"||field.name==="answer"}/>
               :<input className="input" id={`field-${field.name}`} type={field.type??"text"} value={String(editor.values[field.name]??"")} onChange={event=>setField(field.name,event.target.value)} required={["title","slug","question"].includes(field.name)}/>}
           </div>)}
