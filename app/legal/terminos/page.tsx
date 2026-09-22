@@ -1,2 +1,13 @@
-import type {Metadata} from "next";export const metadata:Metadata={title:"Términos de servicio"};
-export default function TermsPage(){return <main className="section page-container prose-page"><p className="eyebrow">Legal</p><h1>Términos de servicio</h1><p>Última actualización: 17 de septiembre de 2026.</p><h2>Aceptación</h2><p>Al utilizar el servicio aceptas estos términos y las políticas vinculadas.</p><h2>Uso permitido</h2><p>No puedes vulnerar la seguridad, interferir con el servicio ni utilizarlo para actividades ilícitas.</p><h2>Disponibilidad</h2><p>Trabajamos para mantener una alta disponibilidad, aunque pueden existir ventanas de mantenimiento y eventos externos.</p><h2>Responsabilidad</h2><p>La responsabilidad se limita en la medida permitida por la legislación aplicable.</p></main>}
+import type {Metadata} from "next";
+import {EditablePageBody} from "@/components/site/editable-page-body";
+import {getPage} from "@/lib/content";
+
+export async function generateMetadata():Promise<Metadata>{
+  const page=await getPage("terminos");
+  return{title:page?.seo_title??page?.title,description:page?.seo_description??page?.summary};
+}
+
+export default async function TermsPage(){
+  const page=await getPage("terminos");
+  return <main className="section page-container prose-page"><p className="eyebrow">Legal</p><h1>{page?.title}</h1><p>{page?.summary}</p><EditablePageBody body={page?.body??""}/></main>;
+}

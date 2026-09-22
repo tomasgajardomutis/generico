@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Header } from "@/components/site/header";
 import { Footer } from "@/components/site/footer";
+import { CookieConsent } from "@/components/site/cookie-consent";
 import { getSiteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es-CL" suppressHydrationWarning>
-      <body className="antialiased"><Header />{children}<Footer /></body>
+      <body className="antialiased"><Header />{children}<Footer /><CookieConsent /></body>
     </html>
   );
 }

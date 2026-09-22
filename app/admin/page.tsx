@@ -2,11 +2,12 @@
 
 import {FormEvent,useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
-import {FileText,HelpCircle,LogOut,Newspaper,Package,Pencil,Plus,Save,Trash2,X} from "lucide-react";
-import {demoFaqs,demoNews,demoPosts,demoServices} from "@/lib/content";
+import {FileText,HelpCircle,LayoutTemplate,LogOut,Newspaper,Package,Pencil,Plus,Save,Trash2,X} from "lucide-react";
+import {demoFaqs,demoNews,demoPages,demoPosts,demoServices} from "@/lib/content";
 import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";
 
 const modules=[
+  {id:"pages",label:"Páginas",icon:LayoutTemplate},
   {id:"services",label:"Servicios",icon:Package},
   {id:"posts",label:"Blog",icon:FileText},
   {id:"news",label:"Noticias",icon:Newspaper},
@@ -18,6 +19,7 @@ type CmsRow=Record<string,unknown>;
 type EditorState={mode:"create"|"edit";values:CmsRow}|null;
 
 const fallback:Record<ModuleId,CmsRow[]>={
+  pages:Object.values(demoPages) as unknown as CmsRow[],
   services:demoServices as unknown as CmsRow[],
   posts:demoPosts as unknown as CmsRow[],
   news:demoNews as unknown as CmsRow[],
@@ -27,6 +29,12 @@ const fallback:Record<ModuleId,CmsRow[]>={
 // Lista blanca de columnas editables. Los campos internos (id y timestamps)
 // nunca se muestran ni se envían de vuelta a la API.
 const editableFields:Record<ModuleId,{name:string;label:string;type?:"text"|"textarea"|"number"|"datetime-local"}[]>={
+  pages:[
+    {name:"title",label:"Título principal"},{name:"slug",label:"Identificador de página"},
+    {name:"summary",label:"Introducción",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
+    {name:"seo_title",label:"Título SEO"},{name:"seo_description",label:"Descripción SEO",type:"textarea"},
+    {name:"locale",label:"Idioma y región"},
+  ],
   services:[
     {name:"title",label:"Título"},{name:"slug",label:"URL (slug)"},
     {name:"summary",label:"Resumen",type:"textarea"},{name:"body",label:"Contenido",type:"textarea"},
@@ -55,6 +63,7 @@ const editableFields:Record<ModuleId,{name:string;label:string;type?:"text"|"tex
 
 function emptyItem(module:ModuleId,rowCount:number):CmsRow{
   if(module==="faqs")return{question:"",answer:"",sort_order:rowCount+1,is_published:false};
+  if(module==="pages")return{title:"",slug:"",summary:"",body:"",seo_title:"",seo_description:"",locale:"es-CL",is_published:false};
   return{title:"",slug:"",summary:"",body:"",category:"",image_url:"",is_published:false,
     ...(module==="services"?{sort_order:rowCount+1}:{}),
     ...(module==="posts"?{author_name:"",seo_title:"",seo_description:"",published_at:""}:{}),
