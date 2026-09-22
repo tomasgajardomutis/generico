@@ -68,3 +68,11 @@ export async function getPage(slug:string){
  if(error||!data)return demoPages[slug]??null;
  return data as PageItem;
 }
+
+// Devuelve las páginas públicas para generar rutas y sitemap. Ante un error de
+// conexión se conservan únicamente las páginas de demostración conocidas.
+export async function getPublishedPages(){
+ const{data,error}=await getSupabasePublicClient().from("pages").select("id,slug,title,summary,body,seo_title,seo_description,locale,is_published,updated_at").eq("is_published",true).order("updated_at",{ascending:false});
+ if(error)return Object.values(demoPages);
+ return data as PageItem[];
+}
