@@ -2,7 +2,7 @@
 
 import {FormEvent,useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
-import {FileText,HelpCircle,LayoutTemplate,LogOut,Newspaper,Package,Pencil,Plus,Save,Trash2,X} from "lucide-react";
+import {Eye,EyeOff,FileText,HelpCircle,LayoutTemplate,LogOut,Newspaper,Package,Pencil,Plus,Save,Search,Trash2,X} from "lucide-react";
 import {demoFaqs,demoNews,demoPages,demoPosts,demoServices} from "@/lib/content";
 import {getSupabaseClient,isSupabaseConfigured} from "@/lib/supabase/client";
 
@@ -90,6 +90,18 @@ export default function AdminPage(){
   const[editor,setEditor]=useState<EditorState>(null);
   const[message,setMessage]=useState("");
   const[loading,setLoading]=useState(false);
+  const[search,setSearch]=useState("");
+  const[status,setStatus]=useState<"all"|"published"|"draft">("all");
+
+  // El filtrado se ejecuta en memoria porque cada módulo del CMS contiene una
+  // cantidad acotada de registros. Evita consultas extra mientras se escribe.
+  const visibleRows=useMemo(()=>rows.filter(row=>{
+    const label=String(row.title??row.question??"").toLocaleLowerCase("es");
+    const matchesText=label.includes(search.trim().toLocaleLowerCase("es"));
+    const published=row.is_published!==false;
+    const matchesStatus=status==="all"||(status==="published"?published:!published);
+    return matchesText&&matchesStatus;
+  }),[rows,search,status]);
 
   useEffect(()=>{
     client?.auth.getSession().then(({data})=>{
@@ -110,7 +122,7 @@ export default function AdminPage(){
   },[active,ready,client]);
 
   function changeModule(id:ModuleId){
-    setActive(id);setEditor(null);setMessage("");setLoading(Boolean(client));
+    setActive(id);setEditor(null);setMessage("");setSearch("");setStatus("all");setLoading(Boolean(client));
     if(!client)setRows(fallback[id]);
   }
 
@@ -137,6 +149,14 @@ export default function AdminPage(){
       if(field.type==="datetime-local")value=value?new Date(String(value)).toISOString():null;
       return[field.name,value];
     }));
+    // Los textos obligatorios se normalizan antes de escribir. Esto evita FAQ
+    // vacías o preguntas compuestas solo por espacios.
+    for(const field of editableFields[active]){
+      if(["title","slug","question","answer"].includes(field.name)&&!String(payload[field.name]??"").trim()){
+        setLoading(false);setMessage(`Completa el campo ${field.label.toLowerCase()}.`);return;
+      }
+      if(typeof payload[field.name]==="string")payload[field.name]=String(payload[field.name]).trim();
+    }
     const writable={...payload,is_published:Boolean(editor.values.is_published)};
     const query=editor.mode==="create"
       ?client.from(active).insert(writable)
@@ -145,7 +165,12 @@ export default function AdminPage(){
     setLoading(false);
     if(error){setMessage(`No fue posible guardar: ${error.message}`);return}
 
-    setRows(current=>editor.mode==="create"?[data,...current]:current.map(row=>row.id===data.id?data:row));
+    setRows(current=>{
+      const updated=editor.mode==="create"?[data,...current]:current.map(row=>row.id===data.id?data:row);
+      return active==="faqs"||active==="services"
+        ?updated.toSorted((a,b)=>Number(a.sort_order??0)-Number(b.sort_order??0))
+        :updated;
+    });
     setEditor(null);setMessage("Cambios guardados correctamente.");
   }
 
@@ -157,6 +182,19 @@ export default function AdminPage(){
     setLoading(false);
     if(error)setMessage(`No fue posible eliminar: ${error.message}`);
     else{setRows(current=>current.filter(row=>row.id!==id));setMessage("Contenido eliminado.")}
+  }
+
+  // Publicación rápida desde la tabla. La política RLS vuelve a validar que la
+  // sesión pertenece a un administrador antes de modificar el registro.
+  async function togglePublished(row:CmsRow){
+    if(!client||typeof row.id!=="string"){setMessage("Acción disponible al conectar Supabase.");return}
+    const next=row.is_published===false;
+    setLoading(true);setMessage("");
+    const{data,error}=await client.from(active).update({is_published:next}).eq("id",row.id).select("*").single();
+    setLoading(false);
+    if(error){setMessage(`No fue posible cambiar el estado: ${error.message}`);return}
+    setRows(current=>current.map(item=>item.id===data.id?data:item));
+    setMessage(next?"Contenido publicado correctamente.":"Contenido guardado como borrador.");
   }
 
   async function logout(){await client?.auth.signOut();router.replace("/admin/login")}
@@ -175,9 +213,14 @@ export default function AdminPage(){
         <div className="admin-toolbar"><div><p className="eyebrow">Editor</p><h1>{modules.find(module=>module.id===active)?.label}</h1></div><button className="button button-primary" onClick={openCreate}><Plus size={17}/> Crear</button></div>
         {!isSupabaseConfigured()&&<p className="notice">Vista de demostración. Configura Supabase para habilitar operaciones persistentes.</p>}
         {message&&<p className="notice" role="status">{message}</p>}
-        <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Título / pregunta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-          {rows.map(row=><tr key={String(row.id)}><td>{String(row.title??row.question??"Sin título")}</td><td>{row.is_published===false?"Borrador":"Publicado"}</td><td><div className="admin-actions"><button className="icon-button" onClick={()=>openEdit(row)} aria-label="Editar"><Pencil size={16}/></button><button className="icon-button" onClick={()=>remove(row.id)} aria-label="Eliminar"><Trash2 size={16}/></button></div></td></tr>)}
-          {!loading&&rows.length===0&&<tr><td colSpan={3}>Aún no hay contenido en este módulo.</td></tr>}
+        <div className="admin-filters">
+          <label className="admin-search"><Search size={17}/><span className="sr-only">Buscar contenido</span><input value={search} onChange={event=>setSearch(event.target.value)} placeholder={active==="faqs"?"Buscar una pregunta…":"Buscar contenido…"}/></label>
+          <label className="admin-status"><span>Estado</span><select value={status} onChange={event=>setStatus(event.target.value as typeof status)}><option value="all">Todos</option><option value="published">Publicados</option><option value="draft">Borradores</option></select></label>
+          <span className="admin-result-count">{visibleRows.length} de {rows.length}</span>
+        </div>
+        <div className="admin-table-wrap"><table className="admin-table"><thead><tr>{active==="faqs"&&<th>Orden</th>}<th>Título / pregunta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {visibleRows.map(row=><tr key={String(row.id)}>{active==="faqs"&&<td>{String(row.sort_order??"—")}</td>}<td>{String(row.title??row.question??"Sin título")}</td><td><span className={`status-badge ${row.is_published===false?"draft":"published"}`}>{row.is_published===false?"Borrador":"Publicado"}</span></td><td><div className="admin-actions"><button className="icon-button" onClick={()=>togglePublished(row)} aria-label={row.is_published===false?"Publicar":"Pasar a borrador"} title={row.is_published===false?"Publicar":"Pasar a borrador"}>{row.is_published===false?<Eye size={16}/>:<EyeOff size={16}/>}</button><button className="icon-button" onClick={()=>openEdit(row)} aria-label="Editar" title="Editar"><Pencil size={16}/></button><button className="icon-button danger" onClick={()=>remove(row.id)} aria-label="Eliminar" title="Eliminar"><Trash2 size={16}/></button></div></td></tr>)}
+          {!loading&&visibleRows.length===0&&<tr><td colSpan={active==="faqs"?4:3}>{rows.length===0?"Aún no hay contenido en este módulo.":"No hay resultados para estos filtros."}</td></tr>}
         </tbody></table></div>
         {loading&&!editor&&<p className="article-meta">Cargando contenido…</p>}
       </div>
